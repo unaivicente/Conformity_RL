@@ -1,0 +1,393 @@
+
+library(ggplot2) 
+library(lme4)
+library(effects)
+library(lmerTest)
+library(effsize)
+library(sjmisc)
+library(plyr)
+library(dplyr)
+library(tidyverse)
+library(ggplot2)
+library(plotly)
+library(wesanderson)
+
+# color palette for plots
+
+colg = rev(wes_palette("Darjeeling1", n = 2))
+
+
+data_total <- read.csv('totaldata.csv', sep = ',')
+names<-c('Block','TrialRep','Trial','Lead','win','AbsSuj')
+data_total[,names] <- lapply(data_total[,names],factor)
+
+#MODEL FIT#############################################################################
+TR_mlm <- lmer(Inter_div_abs~TrialRep+ (1|ID/AbsSuj),data=data_total)
+#Main Interaction Model: Group*TrialRep
+total_mlm <- lmer(Inter_div_abs~TrialRep*Group+ (1|ID/AbsSuj),data=data_total)
+
+summary(total_mlm)
+anova(total_mlm)
+
+
+efTR <- effect(term = "TrialRep", mod = TR_mlm)
+efdataTR <- as.data.frame(efTR)
+
+#Fit Secondary Interaction Model: Group*Block
+
+total_block <- lmer(Inter_div_abs~Block*Group + (1|ID/AbsSuj),data=data_total)
+total_block
+
+summary(total_block)
+anova(total_block)
+plot(Effect(c("Block","Group"),total_block))
+
+
+#PLOT EFFECTS OF MAIN INTERACTION
+
+ef1 <- effect(term = "TrialRep*Group", mod = total_mlm)
+efdata1 <- as.data.frame(ef1)
+
+f1 <- ggplot(efdata1, aes(x=TrialRep, y=fit, color=Group, group=Group)) + 
+  ggtitle("Difference in Answers by Group")+
+  geom_point() + 
+  geom_line(size=1.2) +
+  expand_limits(y = 0) +
+  scale_x_discrete(limits=c("1","2","3"))+
+  geom_ribbon(aes(ymin=fit-se, ymax=fit+se), alpha=0.15, linetype="dashed") + 
+  labs(x= "Trial Repetition", y="Difference between Users", color="Groups", fill="Groups") + theme_gray() + theme(text=element_text(size=20))+
+  scale_fill_manual(values=colg) +
+  scale_color_manual(values=colg) +
+  theme_light() +
+  theme(axis.text=element_text(size=10),
+        axis.title=element_text(size=10,face="bold"),
+        legend.title=element_text(size=12),
+        legend.text=element_text(size=10))+
+  theme(plot.title = element_text(hjust = 0.5,size=12,face="bold"))
+
+
+#PLOT EFFECTS OF 2ND INTERACTION
+
+
+ef.b <- effect(term = "Block*Group", mod = total_block)
+efdata.b <- as.data.frame(ef.b)
+
+theme(plot.title = element_text(hjust = 0.5))
+
+markB <- c("1", "2", "3", "4")
+
+blockp <- ggplot(efdata.b, aes(x=Block, y=fit, color=Group, group=Group)) + 
+  ggtitle("Difference in Answers by Group and Block")+
+  geom_point() + 
+  geom_line(size=1.2) +
+  scale_x_discrete(labels= markB) +
+  expand_limits(y = 0) +
+  geom_ribbon(aes(ymin=fit-se, ymax=fit+se), alpha=0.15, linetype="dashed") + 
+  labs(x= "Block", y="Difference Averages between Users", color="Groups", fill="Groups") + theme_gray() + theme(text=element_text(size=20))+
+  scale_fill_manual(values=colg) +
+  scale_color_manual(values=colg) +
+  theme_light() +
+  theme(axis.text=element_text(size=10),
+        axis.title=element_text(size=10,face="bold"),
+        legend.title=element_text(size=12),
+        legend.text=element_text(size=10))+
+  theme(plot.title = element_text(hjust = 0.5,size=12,face="bold"))
+
+ggsave('diff_blocks.pdf', blockp , device = cairo_pdf, width = 15, height = 10, units="cm")
+
+###Plotting the effects in ggplot2
+
+
+ef1 <- effect(term = "TrialRep*Group", mod = total_mlm)
+efdata1 <- as.data.frame(ef1)
+
+###Plot the result
+
+
+f1 <- ggplot(efdata1, aes(x=TrialRep, y=fit, color=Group, group=Group)) + 
+  ggtitle("Difference in Answers by Group")+
+  geom_point() + 
+  geom_line(size=1.2) +
+  expand_limits(y = 0) +
+  scale_x_discrete(limits=c("1","2","3"))+
+  geom_ribbon(aes(ymin=fit-se, ymax=fit+se), alpha=0.15, linetype="dashed") + 
+  labs(x= "Trial Repetition", y="Difference between Users", color="Groups", fill="Groups") + theme_gray() + theme(text=element_text(size=20))+
+  scale_fill_manual(values=colg) +
+  scale_color_manual(values=colg) +
+  theme_light() +
+  theme(axis.text=element_text(size=10),
+        axis.title=element_text(size=10,face="bold"),
+        legend.title=element_text(size=12),
+        legend.text=element_text(size=10))+
+  theme(plot.title = element_text(hjust = 0.5,size=12,face="bold"))
+
+ggsave('diff_responses.pdf', f1 , device = cairo_pdf, width = 15, height = 10, units="cm")
+
+
+###Mean Calc and Effect Size
+
+datacohen <- subset(data_total, TrialRep==3 & DyadSuj==1)
+rownames(datacohen) <- 1:nrow(datacohen)
+datacohen <- colMeans(matrix(datacohen$Inter_div_abs, nrow=160))
+datacohen <- as.data.frame(datacohen)
+datacohen$group <- c(rep(1:2, each = 20))
+datacohen$group <- recode(datacohen$group, "1"="C", "2"="I")
+
+cohenD <- cohen.d(datacohen~group, data = datacohen)
+cohenD
+
+
+
+#PRODUCTIVITY MEASURE (ACCURACY)
+
+###First we print a new column to see the average of the users
+
+data_total$UsrAvg <- apply(data_total[,6:7],1,mean)
+
+###We take the third and print it per trial by 3
+
+data_total$Productivity <- vector(length = dim(data_total)[1])
+for(i in seq(1,dim(data_total)[1],by=3)){
+  data_total$Productivity[c(i,i+1,i+2)] <- rep(data_total$UsrAvg[i+2]-data_total$Random.Point[i+2],each = 3)
+}
+
+data_total$Productivity_abs <- as.integer(lapply(data_total$Productivity,abs))
+
+
+###Plotting
+
+rep3dat <- as.data.frame(filter(data_total, TrialRep==3))
+summary(rep3dat$ID)
+
+mu <- ddply(rep3dat, "Group", summarise, grp.mean=mean(Productivity_abs))
+
+dat <- as.data.frame(rep3dat[,c("Group","Productivity_abs")])
+
+p <-ggplot(dat, aes(x=Productivity_abs))+
+  geom_histogram(aes(fill=Group),alpha=0.4,position= position_dodge(),bins=10)+
+  geom_vline(data=mu, aes(xintercept=grp.mean, color=Group), linetype="dashed")+
+  ggtitle("Accuracy to Actual Point") + 
+  xlab("Closer to Accuracy") + 
+  ylab("Levels")+
+  xlim(0, 15)+
+  labs(x= "Relative Accuracy to Point (0 means no distance to point)", y="Number of Responses") +
+  scale_fill_manual(values=colg) +
+  scale_color_manual(values=colg) +
+  theme_light() +
+  theme(axis.text=element_text(size=10),
+        axis.title=element_text(size=10,face="bold"),
+        legend.title=element_text(size=12),
+        legend.text=element_text(size=10))+
+  theme(plot.title = element_text(hjust = 0.5,size=12,face="bold"))
+
+ggsave('accuracy.pdf', p , device = cairo_pdf, width = 15, height = 10, units="cm")
+
+
+###Analizing the data
+
+cohenD <- cohen.d(Productivity~Group, data = data_total)
+cohenD
+
+
+#POST EXPERIMENT QUESTIONNAIRE DATA
+
+postexp <- read.csv('postexp.csv', sep = ';')
+postexp <- postexp[-c(77,78),] #remove rejected
+rownames(postexp) <- 1:nrow(postexp)
+
+
+postexp$avg <-  vector(length = dim(postexp)[1])
+for (i in seq(1,dim(postexp)[1])){
+  postexp$avg[i] <-
+    if (postexp$Group[i]=='C'){
+      print(mean(subset(postexp, Group=='C')$P))}
+  else {
+    print(mean(subset(postexp, Group=='I')$P))}
+}                         
+
+cohenD_AAG <- cohen.d(avg~Group, data = postexp)
+cohenD_AAG
+
+
+#ANOVA with Positivity factor AAG
+
+dfM <- as.data.frame(t(c(mean(subset(postexp, Group=='C')$P),mean(subset(postexp, Group=='I')$P))))
+
+
+df <- data.frame(matrix(ncol = 3, nrow = 0))
+x <- c("Positivity in Cooperative", "Positivity in Individual")
+colnames(dfM) <- x
+dfM
+
+fitted <- aov(P~Group,data=sample)
+summary(fitted)
+anova(fitted)
+
+#ANOVA with "did you like the experiment?"
+
+dfM2 <- as.data.frame(t(c(mean(subset(postexp, Group=='C')$X2),mean(subset(postexp, Group=='I')$X2))))
+
+x <- c("Positivity in Cooperative", "Positivity in Individual")
+colnames(dfM2) <- x
+dfM2
+
+fitted2 <- aov(X2~Group,data=sample)
+summary(fitted2)
+
+boxplot(X2~Group,data=postexp)
+
+c(mean(subset(postexp, Group=='C')$X2),mean(subset(postexp, Group=='I')$X2))
+
+#ANOVA with "would you recommend the experiment?"
+
+dfM3 <- as.data.frame(t(c(mean(subset(postexp, Group=='C')$X3),mean(subset(postexp, Group=='I')$X3))))
+
+x <- c("Positivity in Cooperative", "Positivity in Individual")
+colnames(dfM3) <- x
+
+
+fitted3 <- aov(X3~Group,data=sample)
+summary(fitted3)
+
+c(mean(subset(postexp, Group=='C')$X3),mean(subset(postexp, Group=='I')$X3))
+
+
+print("Did you enjoy the experiment?")
+fitted2 <- lm(X2~Group,data=sample)
+summary(fitted2)
+print("Would you recommend the experiment?")
+fitted3 <- lm(X3~Group,data=sample)
+summary(fitted3)
+print("Have you felt you have synched with your mate?")
+fitted8 <- lm(X8~Group,data=sample)
+summary(fitted8)
+print("Have you felt in trust with your mate?")
+fitted11 <- lm(X11~Group,data=sample)
+summary(fitted11)
+print("Do you consider rewarding working with your mate?")
+fitted14 <- lm(X14~Group,data=sample)
+summary(fitted14)
+
+library(plyr)
+library(dplyr)
+library(tidyverse)
+library(ggplot2)
+library(plotly)
+library(wesanderson)
+
+
+#Plotting of responses in Question 2: "Did you enjoy the experiment?"
+
+mu2 <- ddply(postexp, "Group", summarise, grp.mean=mean(X2))
+
+dat2 <- as.data.frame(postexp[,c("Group","X2")])
+
+
+p2 <- dat2 %>% group_by(X2, Group) %>% summarize(n = n()) %>% complete(Group, fill = list(n = 0)) %>% 
+  ggplot(aes(x=X2, n))+
+  geom_bar(aes(color=Group,fill=Group),alpha=0.4, position= position_dodge(preserve = "single"), stat = "identity")+
+  geom_vline(data=mu2, aes(xintercept=grp.mean, color=Group), linetype="dashed")+
+  scale_fill_manual(values=colg) +
+  scale_color_manual(values=colg) +
+  ggtitle("Distribution of Responses in Experience Value (Likeability)") + 
+  xlab("Density in Responses") + 
+  ylab("Levels")+
+  ylim(0,30)+
+  labs(x= "Levels (1 Lower - 5 Higher consideration of the experience)", y="Density in Responses") +
+  theme_light() +
+  theme(axis.text=element_text(size=10),
+        axis.title=element_text(size=10,face="bold"),
+        legend.title=element_text(size=12),
+        legend.text=element_text(size=10))+
+  theme(plot.title = element_text(hjust = 0.5,size=12,face="bold"))
+p2
+
+
+
+#Plotting of responses in Question 8: "Have you felt you have synched with your mate?"
+
+mu8 <- ddply(postexp, "Group", summarise, grp.mean=mean(X8))
+
+dat8 <- as.data.frame(postexp[,c("Group","X8")])
+
+p8 <- dat8 %>% group_by(X8, Group) %>% summarize(n = n()) %>% complete(Group, fill = list(n = 0)) %>% 
+  ggplot(aes(x=X8, n))+
+  geom_bar(aes(color=Group,fill=Group),alpha=0.4, position= position_dodge(preserve = "single"), stat = "identity")+
+  geom_vline(data=mu8, aes(xintercept=grp.mean, color=Group), linetype="dashed")+
+  scale_fill_manual(values=colg) +
+  scale_color_manual(values=colg) +
+  ggtitle("Distribution of Responses in Experience Value (Synchrony)") +
+  xlab("Density in Responses") + 
+  ylab("Levels")+
+  ylim(0,30)+
+  labs(x= "Levels (1 Lower - 5 Higher consideration of the experience)", y="Density in Responses") +
+  theme_light() +
+  theme(axis.text=element_text(size=10),
+        axis.title=element_text(size=10,face="bold"),
+        legend.title=element_text(size=12),
+        legend.text=element_text(size=10))+
+  theme(plot.title = element_text(hjust = 0.5,size=12,face="bold"))
+
+p8
+#Plotting of responses in Question 11: "Have you felt in trust with your mate?"
+
+mu11 <- ddply(postexp, "Group", summarise, grp.mean=mean(X11))
+
+dat11 <- as.data.frame(postexp[,c("Group","X11")])
+
+p11 <- dat11 %>% group_by(X11, Group) %>% summarize(n = n()) %>% complete(Group, fill = list(n = 0)) %>% 
+  ggplot(aes(x=X11, n))+
+  geom_bar(aes(color=Group,fill=Group),alpha=0.4, position= position_dodge(preserve = "single"), stat = "identity")+
+  geom_vline(data=mu11, aes(xintercept=grp.mean, color=Group), linetype="dashed")+
+  scale_fill_manual(values=colg) +
+  scale_color_manual(values=colg) +
+  ggtitle("Distribution of Responses in Experience Value (Trust)") + 
+  xlab("Density in Responses") + 
+  ylab("Levels")+
+  ylim(0,30)+
+  labs(x= "Levels (1 Lower - 5 Higher consideration of the experience)", y="Density in Responses") +
+  theme_light() +
+  theme(axis.text=element_text(size=10),
+        axis.title=element_text(size=10,face="bold"),
+        legend.title=element_text(size=12),
+        legend.text=element_text(size=10))+
+  theme(plot.title = element_text(hjust = 0.5,size=12,face="bold"))
+
+
+#Plotting of responses in Question 14: "Do you consider rewarding working with your mate?"
+
+mu14 <- ddply(postexp, "Group", summarise, grp.mean=mean(X14))
+
+dat14 <- as.data.frame(postexp[,c("Group","X14")])
+
+p14 <- dat14 %>% group_by(X14, Group) %>% summarize(n = n()) %>% complete(Group, fill = list(n = 0)) %>% 
+  ggplot(aes(x=X14, n))+
+  geom_bar(aes(color=Group,fill=Group),alpha=0.4, position= position_dodge(preserve = "single"), stat = "identity")+
+  geom_vline(data=mu14, aes(xintercept=grp.mean, color=Group), linetype="dashed")+
+  scale_fill_manual(values=colg) +
+  scale_color_manual(values=colg) +
+  ggtitle("Distribution of Responses in Experience Value (Reward)") + 
+  xlab("Density in Responses") + 
+  ylab("Levels")+
+  ylim(0,30)+
+  labs(x= "Levels (1 Lower - 5 Higher consideration of the experience)", y="Density in Responses") +
+  theme_light() +
+  theme(axis.text=element_text(size=10),
+        axis.title=element_text(size=10,face="bold"),
+        legend.title=element_text(size=12),
+        legend.text=element_text(size=10))+
+  theme(plot.title = element_text(hjust = 0.5,size=12,face="bold"))
+
+
+
+
+
+
+# Plotting all together
+
+
+library(cowplot)
+
+pall <- plot_grid(p2,p8,p11, p14, labels = "AUTO", label_size = 20)
+ggsave('postexp_questionnaire.pdf', pall , device = cairo_pdf, width = 35, height = 20, units="cm")
+
